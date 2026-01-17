@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect, useCallback } from 'react';
 import { GameStatus, Lane, Obstacle, Orb } from '../types';
 import { COLORS, LANE_WIDTH, HORIZON_Z, PLAYER_Z, INITIAL_SPEED, GRAVITY, JUMP_FORCE, LERP_SPEED } from '../constants';
@@ -15,8 +14,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const requestRef = useRef<number>();
   const lastTimeRef = useRef<number>(0);
-  const lastDrawRef = useRef<number>(0);
-  const targetFPSRef = useRef<number>(60);
   const isMobileRef = useRef<boolean>(false);
   const dprRef = useRef<number>(1);
   const pausedRef = useRef<boolean>(false);
@@ -31,7 +28,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
   const coinsRef = useRef(0);
   const speedRef = useRef(INITIAL_SPEED);
   const targetLaneRef = useRef<Lane>(Lane.CENTER);
-  const displayXRef = useRef(0); // For smooth lerping
+  const displayXRef = useRef(0);
   const playerYRef = useRef(0);
   const playerVelYRef = useRef(0);
   const isSlidingRef = useRef(false);
@@ -77,7 +74,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
-  // Touch / pointer controls (tap to jump, swipe left/right to change lane, down swipe to slide)
+  // Touch / pointer controls
   useEffect(() => {
     let startX = 0;
     let startY = 0;
@@ -96,20 +93,17 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
       const absX = Math.abs(dx);
       const absY = Math.abs(dy);
 
-      // Quick tap
       if (dt < 250 && absX < 10 && absY < 10) {
         if (playerYRef.current === 0) playerVelYRef.current = JUMP_FORCE;
         return;
       }
 
-      // Horizontal swipe
       if (absX > 40 && absX > absY) {
         if (dx < 0 && targetLaneRef.current > Lane.LEFT) targetLaneRef.current--;
         if (dx > 0 && targetLaneRef.current < Lane.RIGHT) targetLaneRef.current++;
         return;
       }
 
-      // Down swipe -> slide
       if (dy > 40 && absY > absX) {
         isSlidingRef.current = true;
         slideTimerRef.current = 35;
@@ -127,17 +121,14 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
   const update = (dt: number) => {
     if (status !== GameStatus.PLAYING) return;
 
-    // Dynamics
     speedRef.current = Math.min(speedRef.current + 0.0015 * dt, 40);
     scoreRef.current += speedRef.current * 0.1 * dt;
     onUpdateScore(Math.floor(scoreRef.current));
     onUpdateSpeed(speedRef.current);
 
-    // Smooth Lane Lerp
     const targetX = (targetLaneRef.current - 1) * LANE_WIDTH;
     displayXRef.current += (targetX - displayXRef.current) * LERP_SPEED;
 
-    // Physics
     playerYRef.current += playerVelYRef.current * dt;
     if (playerYRef.current < 0) {
       playerVelYRef.current += GRAVITY * dt;
@@ -153,63 +144,56 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
 
     backgroundOffsetRef.current = (backgroundOffsetRef.current + speedRef.current) % 2000;
 
-    // Spawning Logic
     spawnTimerRef.current -= dt;
     if (spawnTimerRef.current <= 0) {
-      const lane = Math.floor(Math.random() * 3) as Lane;
-      const roll = Math.random();
-      
-      if (roll < 0.4) {
-        obstaclesRef.current.push({
-          id: Date.now(),
-          lane,
-          z: HORIZON_Z,
-          type: 'TRAIN',
-          length: 400 + Math.random() * 600
-        });
-      } else if (roll < 0.7) {
-        obstaclesRef.current.push({
-          id: Date.now(),
-          lane,
-          z: HORIZON_Z,
-          type: 'HURDLE',
-          length: 20
-        });
-      } else {
-        obstaclesRef.current.push({
-          id: Date.now(),
-          lane,
-          z: HORIZON_Z,
-          type: 'SCANNER',
-          length: 20
-        });
-      }
-
-      // Spawn patterns of orbs
-      const orbLane = Math.floor(Math.random() * 3) as Lane;
-      for (let i = 0; i < 5; i++) {
-        orbsRef.current.push({
-          id: Date.now() + i,
-          lane: orbLane,
-          z: HORIZON_Z + 100 + (i * 80),
-          isCollected: false
-        });
-      }
-
-      // cap spawn counts based on quality
       if (obstaclesRef.current.length < maxObstaclesRef.current) {
+        const lane = Math.floor(Math.random() * 3) as Lane;
+        const roll = Math.random();
+        
+        if (roll < 0.4) {
+          obstaclesRef.current.push({
+            id: Date.now(),
+            lane,
+            z: HORIZON_Z,
+            type: 'TRAIN',
+            length: 400 + Math.random() * 600
+          });
+        } else if (roll < 0.7) {
+          obstaclesRef.current.push({
+            id: Date.now(),
+            lane,
+            z: HORIZON_Z,
+            type: 'HURDLE',
+            length: 20
+          });
+        } else {
+          obstaclesRef.current.push({
+            id: Date.now(),
+            lane,
+            z: HORIZON_Z,
+            type: 'SCANNER',
+            length: 20
+          });
+        }
+
+        const orbLane = Math.floor(Math.random() * 3) as Lane;
+        for (let i = 0; i < 5; i++) {
+          orbsRef.current.push({
+            id: Date.now() + i,
+            lane: orbLane,
+            z: HORIZON_Z + 100 + (i * 80),
+            isCollected: false
+          });
+        }
         spawnTimerRef.current = Math.max(12, 50 - (speedRef.current * 1.2));
       } else {
-        // delay spawn if too many obstacles
         spawnTimerRef.current = 10;
       }
     }
 
-    // Move & Collide
     obstaclesRef.current.forEach(obs => {
       obs.z -= speedRef.current * dt;
       
-      // Tight collision detection
       const obsEnd = obs.z + obs.length;
       if (obs.z < PLAYER_Z + 20 && obsEnd > PLAYER_Z - 20 && obs.lane === targetLaneRef.current) {
         let hit = false;
@@ -238,19 +222,22 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
   };
 
   const draw = (ctx: CanvasRenderingContext2D, timeMs: number) => {
-    const { width, height } = ctx.canvas;
-    ctx.clearRect(0, 0, width, height);
+    const canvas = ctx.canvas;
+    const dpr = dprRef.current || 1;
+    const cssWidth = canvas.width / dpr;
+    const cssHeight = canvas.height / dpr;
+
+    ctx.clearRect(0, 0, cssWidth, cssHeight);
 
     const project = (x: number, y: number, z: number) => {
       const factor = 600 / (z + 600);
       return {
-        x: width / 2 + (x) * factor,
-        y: height / 2 + (y - height / 2) * factor,
+        x: cssWidth / 2 + (x) * factor,
+        y: cssHeight / 2 + (y - cssHeight / 2) * factor,
         scale: factor
       };
     };
 
-    // Draw Cityscape Background (Parallax) - adapt layers for quality
     ctx.fillStyle = COLORS.BUILDING;
     const bgLayers = Math.max(1, backgroundLayersRef.current);
     for (let i = -4; i < 5; i++) {
@@ -259,7 +246,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
       const bZ = (2000 - backgroundOffsetRef.current * 0.5) % 2000;
       for (let j = 0; j < bgLayers; j++) {
         const pZ = (bZ + j * 400) % 2000;
-        const p = project(bX, height, pZ);
+        const p = project(bX, cssHeight, pZ);
         const h = 400 * p.scale;
         const w = 200 * p.scale;
         ctx.fillRect(p.x - w/2, p.y - h, w, h);
@@ -267,48 +254,42 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
           ctx.strokeStyle = COLORS.CYAN;
           ctx.lineWidth = 1;
           ctx.strokeRect(p.x - w/2, p.y - h, w, h);
-          // Windows
           ctx.fillStyle = COLORS.CYAN + '33';
           ctx.fillRect(p.x - w/4, p.y - h*0.8, w/2, h*0.1);
         }
       }
     }
 
-    // Floor
     ctx.fillStyle = COLORS.DARK;
-    const fL = project(-LANE_WIDTH * 2.5, height, 0);
-    const fR = project(LANE_WIDTH * 2.5, height, 0);
-    const fFL = project(-LANE_WIDTH * 1.5, height, HORIZON_Z);
-    const fFR = project(LANE_WIDTH * 1.5, height, HORIZON_Z);
+    const fL = project(-LANE_WIDTH * 2.5, cssHeight, 0);
+    const fR = project(LANE_WIDTH * 2.5, cssHeight, 0);
+    const fFL = project(-LANE_WIDTH * 1.5, cssHeight, HORIZON_Z);
+    const fFR = project(LANE_WIDTH * 1.5, cssHeight, HORIZON_Z);
     ctx.beginPath();
     ctx.moveTo(fL.x, fL.y); ctx.lineTo(fR.x, fR.y); ctx.lineTo(fFR.x, fFR.y); ctx.lineTo(fFL.x, fFL.y);
     ctx.closePath(); ctx.fill();
 
-    // Lanes
     ctx.strokeStyle = COLORS.MAGENTA;
     ctx.lineWidth = 2;
     for (let i = -1.5; i <= 1.5; i += 1) {
-      const s = project(i * LANE_WIDTH, height, 0);
-      const e = project(i * LANE_WIDTH, height, HORIZON_Z);
+      const s = project(i * LANE_WIDTH, cssHeight, 0);
+      const e = project(i * LANE_WIDTH, cssHeight, HORIZON_Z);
       ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(e.x, e.y); ctx.stroke();
     }
 
-    // Orbs
     orbsRef.current.forEach(orb => {
-      const p = project((orb.lane - 1) * LANE_WIDTH, height - 60, orb.z);
+      const p = project((orb.lane - 1) * LANE_WIDTH, cssHeight - 60, orb.z);
       if (p.scale > 0) {
         ctx.fillStyle = COLORS.GOLD;
-        // reduce shadow on mobile
         ctx.shadowBlur = isMobileRef.current ? 6 : 10; ctx.shadowColor = COLORS.GOLD;
         ctx.beginPath(); ctx.arc(p.x, p.y, 12 * p.scale, 0, Math.PI*2); ctx.fill();
         ctx.shadowBlur = 0;
       }
     });
 
-    // Obstacles
     obstaclesRef.current.forEach(obs => {
-      const startP = project((obs.lane - 1) * LANE_WIDTH, height, obs.z);
-      const endP = project((obs.lane - 1) * LANE_WIDTH, height, obs.z + obs.length);
+      const startP = project((obs.lane - 1) * LANE_WIDTH, cssHeight, obs.z);
+      const endP = project((obs.lane - 1) * LANE_WIDTH, cssHeight, obs.z + obs.length);
 
       if (startP.scale > 0) {
         ctx.save();
@@ -316,22 +297,18 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
           ctx.fillStyle = COLORS.TRAIN;
           ctx.strokeStyle = COLORS.MAGENTA;
           ctx.lineWidth = 3;
-          // Simplified 3D box for train
           const wS = 100 * startP.scale;
           const hS = 160 * startP.scale;
           const wE = 100 * endP.scale;
           const hE = 160 * endP.scale;
 
-          // Back face
           ctx.fillRect(endP.x - wE/2, endP.y - hE, wE, hE);
-          // Connecting lines for depth
           ctx.beginPath();
           ctx.moveTo(startP.x - wS/2, startP.y); ctx.lineTo(endP.x - wE/2, endP.y);
           ctx.moveTo(startP.x + wS/2, startP.y); ctx.lineTo(endP.x + wE/2, endP.y);
           ctx.moveTo(startP.x - wS/2, startP.y - hS); ctx.lineTo(endP.x - wE/2, endP.y - hE);
           ctx.moveTo(startP.x + wS/2, startP.y - hS); ctx.lineTo(endP.x + wE/2, endP.y - hE);
           if (!lowQualityRef.current) ctx.stroke();
-          // Front face
           ctx.fillRect(startP.x - wS/2, startP.y - hS, wS, hS);
           if (!lowQualityRef.current) ctx.strokeRect(startP.x - wS/2, startP.y - hS, wS, hS);
         } else if (obs.type === 'HURDLE') {
@@ -354,13 +331,11 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
       }
     });
 
-    // Player
-    const pProj = project(displayXRef.current, height + playerYRef.current, PLAYER_Z);
+    const pProj = project(displayXRef.current, cssHeight + playerYRef.current, PLAYER_Z);
     ctx.save();
     ctx.translate(pProj.x, pProj.y);
     ctx.scale(pProj.scale, pProj.scale);
 
-    // Animation bob (use timeMs to avoid Date.now allocations)
     const bob = Math.sin(timeMs * 0.001) * 5;
 
     ctx.fillStyle = COLORS.STONE;
@@ -372,15 +347,12 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
       ctx.fillRect(-50, -30, 100, 30);
       ctx.strokeRect(-50, -30, 100, 30);
     } else {
-      // Helmet
       ctx.fillRect(-20, -135 + bob, 40, 40);
       ctx.fillStyle = COLORS.CYAN;
       ctx.fillRect(-15, -120 + bob, 30, 5);
-      // Body
       ctx.fillStyle = COLORS.STONE;
       ctx.fillRect(-35, -100 + bob, 70, 100);
       ctx.strokeRect(-35, -100 + bob, 70, 100);
-      // Cape
       ctx.fillStyle = COLORS.MAGENTA + '66';
       ctx.beginPath();
       ctx.moveTo(-35, -90 + bob);
@@ -388,42 +360,39 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
       ctx.lineTo(-35, -10 + bob);
       ctx.fill();
     }
+    ctx.shadowBlur = 0;
     ctx.restore();
   };
 
   const loop = (time: number) => {
     const timeMs = time;
     const dtMs = lastTimeRef.current ? (timeMs - lastTimeRef.current) : (1000 / 60);
-    const targetFPS = targetFPSRef.current;
+    const targetFPS = isMobileRef.current ? 30 : 60;
     const minFrameMs = 1000 / targetFPS;
 
-    // Skip frames if we are above target FPS (reduces GPU work on mobile)
     if (dtMs < minFrameMs) {
       requestRef.current = requestAnimationFrame(loop);
       return;
     }
 
-    lastTimeRef.current = timeMs;
-    // adaptive quality tracking
     const ft = frameTimesRef.current;
     ft.push(dtMs);
     if (ft.length > 30) ft.shift();
     const avg = ft.reduce((a, b) => a + b, 0) / ft.length;
-    // If average frame time is high, reduce quality
+    
     if (avg > 28) {
       lowQualityRef.current = true;
       backgroundLayersRef.current = Math.max(2, Math.floor(backgroundLayersRef.current / 2));
-      targetFPSRef.current = isMobileRef.current ? 25 : 45;
       maxObstaclesRef.current = Math.max(6, Math.floor(maxObstaclesRef.current * 0.7));
       maxOrbsRef.current = Math.max(12, Math.floor(maxOrbsRef.current * 0.7));
     } else if (avg < 18) {
       lowQualityRef.current = isMobileRef.current ? true : false;
       backgroundLayersRef.current = isMobileRef.current ? 3 : 6;
-      targetFPSRef.current = isMobileRef.current ? 30 : 60;
       maxObstaclesRef.current = isMobileRef.current ? 8 : 16;
       maxOrbsRef.current = isMobileRef.current ? 20 : 60;
     }
 
+    lastTimeRef.current = timeMs;
     const dt = dtMs / 16.67;
     update(dt);
 
@@ -436,12 +405,9 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
   };
 
   useEffect(() => {
-    // detect mobile
     try { isMobileRef.current = /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent) || window.matchMedia('(pointer:coarse)').matches; } catch (e) { isMobileRef.current = false; }
     dprRef.current = Math.min(window.devicePixelRatio || 1, isMobileRef.current ? 1.5 : 2);
-    targetFPSRef.current = isMobileRef.current ? 30 : 60;
 
-    // initial quality settings
     if (isMobileRef.current) {
       lowQualityRef.current = true;
       backgroundLayersRef.current = 3;
