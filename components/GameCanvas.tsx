@@ -227,7 +227,14 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
     const cssWidth = canvas.width / dpr;
     const cssHeight = canvas.height / dpr;
 
-    ctx.clearRect(0, 0, cssWidth, cssHeight);
+    // Full reset: clear any transform, shadow, or state
+    ctx.resetTransform();
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Set up transform for scaled drawing
+    ctx.scale(dpr, dpr);
 
     const project = (x: number, y: number, z: number) => {
       const factor = 600 / (z + 600);
@@ -238,6 +245,7 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
       };
     };
 
+    // Draw background buildings
     ctx.fillStyle = COLORS.BUILDING;
     const bgLayers = Math.max(1, backgroundLayersRef.current);
     for (let i = -4; i < 5; i++) {
@@ -256,11 +264,12 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
           ctx.strokeRect(p.x - w/2, p.y - h, w, h);
           ctx.fillStyle = COLORS.CYAN + '33';
           ctx.fillRect(p.x - w/4, p.y - h*0.8, w/2, h*0.1);
+          ctx.fillStyle = COLORS.BUILDING;
         }
       }
     }
 
-    // Floor
+    // Draw floor/ground
     ctx.fillStyle = '#0a1428';
     const fL = project(-LANE_WIDTH * 2.5, cssHeight, 0);
     const fR = project(LANE_WIDTH * 2.5, cssHeight, 0);
@@ -268,26 +277,41 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
     const fFR = project(LANE_WIDTH * 1.5, cssHeight, HORIZON_Z);
     ctx.beginPath();
     ctx.moveTo(fL.x, fL.y); ctx.lineTo(fR.x, fR.y); ctx.lineTo(fFR.x, fFR.y); ctx.lineTo(fFL.x, fFL.y);
-    ctx.closePath(); ctx.fill();
+    ctx.closePath();
+    ctx.fill();
 
+    // Draw lane markers
     ctx.strokeStyle = COLORS.MAGENTA;
     ctx.lineWidth = 2;
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
     for (let i = -1.5; i <= 1.5; i += 1) {
       const s = project(i * LANE_WIDTH, cssHeight, 0);
       const e = project(i * LANE_WIDTH, cssHeight, HORIZON_Z);
-      ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(e.x, e.y); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y);
+      ctx.lineTo(e.x, e.y);
+      ctx.stroke();
     }
 
+    // Draw orbs/coins
     orbsRef.current.forEach(orb => {
       const p = project((orb.lane - 1) * LANE_WIDTH, cssHeight - 60, orb.z);
       if (p.scale > 0) {
+        ctx.save();
         ctx.fillStyle = COLORS.GOLD;
-        ctx.shadowBlur = isMobileRef.current ? 6 : 10; ctx.shadowColor = COLORS.GOLD;
-        ctx.beginPath(); ctx.arc(p.x, p.y, 12 * p.scale, 0, Math.PI*2); ctx.fill();
-        ctx.shadowBlur = 0;
+        if (!isMobileRef.current) {
+          ctx.shadowColor = COLORS.GOLD;
+          ctx.shadowBlur = 10;
+        }
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 12 * p.scale, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
       }
     });
 
+    // Draw obstacles
     obstaclesRef.current.forEach(obs => {
       const startP = project((obs.lane - 1) * LANE_WIDTH, cssHeight, obs.z);
       const endP = project((obs.lane - 1) * LANE_WIDTH, cssHeight, obs.z + obs.length);
@@ -304,45 +328,56 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
           const hE = 160 * endP.scale;
 
           ctx.fillRect(endP.x - wE/2, endP.y - hE, wE, hE);
-          ctx.beginPath();
-          ctx.moveTo(startP.x - wS/2, startP.y); ctx.lineTo(endP.x - wE/2, endP.y);
-          ctx.moveTo(startP.x + wS/2, startP.y); ctx.lineTo(endP.x + wE/2, endP.y);
-          ctx.moveTo(startP.x - wS/2, startP.y - hS); ctx.lineTo(endP.x - wE/2, endP.y - hE);
-          ctx.moveTo(startP.x + wS/2, startP.y - hS); ctx.lineTo(endP.x + wE/2, endP.y - hE);
-          if (!lowQualityRef.current) ctx.stroke();
+          if (!lowQualityRef.current) {
+            ctx.beginPath();
+            ctx.moveTo(startP.x - wS/2, startP.y);
+            ctx.lineTo(endP.x - wE/2, endP.y);
+            ctx.moveTo(startP.x + wS/2, startP.y);
+            ctx.lineTo(endP.x + wE/2, endP.y);
+            ctx.moveTo(startP.x - wS/2, startP.y - hS);
+            ctx.lineTo(endP.x - wE/2, endP.y - hE);
+            ctx.moveTo(startP.x + wS/2, startP.y - hS);
+            ctx.lineTo(endP.x + wE/2, endP.y - hE);
+            ctx.stroke();
+            ctx.strokeRect(startP.x - wS/2, startP.y - hS, wS, hS);
+          }
           ctx.fillRect(startP.x - wS/2, startP.y - hS, wS, hS);
-          if (!lowQualityRef.current) ctx.strokeRect(startP.x - wS/2, startP.y - hS, wS, hS);
         } else if (obs.type === 'HURDLE') {
           ctx.fillStyle = COLORS.STONE;
-          ctx.strokeStyle = COLORS.CYAN;
           ctx.fillRect(startP.x - 60 * startP.scale, startP.y - 40 * startP.scale, 120 * startP.scale, 40 * startP.scale);
-          if (!lowQualityRef.current) ctx.strokeRect(startP.x - 60 * startP.scale, startP.y - 40 * startP.scale, 120 * startP.scale, 40 * startP.scale);
+          if (!lowQualityRef.current) {
+            ctx.strokeStyle = COLORS.CYAN;
+            ctx.strokeRect(startP.x - 60 * startP.scale, startP.y - 40 * startP.scale, 120 * startP.scale, 40 * startP.scale);
+          }
         } else if (obs.type === 'SCANNER') {
-          ctx.strokeStyle = COLORS.LASER;
-          ctx.lineWidth = 5 * startP.scale;
-          ctx.beginPath();
-          ctx.moveTo(startP.x - 70 * startP.scale, startP.y - 180 * startP.scale);
-          ctx.lineTo(startP.x + 70 * startP.scale, startP.y - 180 * startP.scale);
-          if (!lowQualityRef.current) ctx.stroke();
           ctx.fillStyle = COLORS.STONE;
           ctx.fillRect(startP.x - 70 * startP.scale, startP.y - 180 * startP.scale, 10 * startP.scale, 180 * startP.scale);
-          if (!lowQualityRef.current) ctx.fillRect(startP.x + 60 * startP.scale, startP.y - 180 * startP.scale, 10 * startP.scale, 180 * startP.scale);
+          if (!lowQualityRef.current) {
+            ctx.strokeStyle = COLORS.LASER;
+            ctx.lineWidth = 5 * startP.scale;
+            ctx.beginPath();
+            ctx.moveTo(startP.x - 70 * startP.scale, startP.y - 180 * startP.scale);
+            ctx.lineTo(startP.x + 70 * startP.scale, startP.y - 180 * startP.scale);
+            ctx.stroke();
+            ctx.fillRect(startP.x + 60 * startP.scale, startP.y - 180 * startP.scale, 10 * startP.scale, 180 * startP.scale);
+          }
         }
         ctx.restore();
       }
     });
 
-    const pProj = project(displayXRef.current, cssHeight + playerYRef.current, PLAYER_Z);
+    // Draw player
     ctx.save();
+    const pProj = project(displayXRef.current, cssHeight + playerYRef.current, PLAYER_Z);
     ctx.translate(pProj.x, pProj.y);
     ctx.scale(pProj.scale, pProj.scale);
 
     const bob = Math.sin(timeMs * 0.001) * 5;
-
     ctx.fillStyle = COLORS.STONE;
     ctx.strokeStyle = COLORS.CYAN;
     ctx.lineWidth = 4;
-    ctx.shadowBlur = isMobileRef.current ? 8 : 15; ctx.shadowColor = COLORS.CYAN;
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
 
     if (isSlidingRef.current) {
       ctx.fillRect(-50, -30, 100, 30);
@@ -361,7 +396,6 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
       ctx.lineTo(-35, -10 + bob);
       ctx.fill();
     }
-    ctx.shadowBlur = 0;
     ctx.restore();
   };
 
