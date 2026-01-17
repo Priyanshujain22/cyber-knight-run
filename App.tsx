@@ -53,23 +53,23 @@ const App: React.FC = () => {
       />
 
       {status === GameStatus.PLAYING && (
-        <div className="absolute top-0 left-0 w-full p-8 flex justify-between items-start pointer-events-none">
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-3">
-              <div className="w-3 h-3 bg-cyan-400 animate-pulse shadow-[0_0_10px_cyan]" />
-              <span className="text-4xl font-black italic tracking-tighter text-white drop-shadow-lg">
+        <div className="absolute top-0 left-0 w-full px-4 md:px-8 pt-4 md:pt-8 flex justify-between items-start pointer-events-none z-10">
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2 md:gap-3">
+              <div className="w-2 h-2 md:w-3 md:h-3 bg-cyan-400 animate-pulse shadow-[0_0_10px_cyan]" />
+              <span className="text-2xl md:text-4xl font-black italic tracking-tighter text-white drop-shadow-lg">
                 {Math.floor(score).toLocaleString()}
               </span>
             </div>
-            <div className="flex items-center gap-2 text-yellow-400 ml-6">
-              <span className="text-xs font-bold uppercase tracking-widest opacity-70">Data Orbs</span>
-              <span className="text-xl font-bold font-mono">{coins}</span>
+            <div className="flex items-center gap-1 md:gap-2 text-yellow-400 ml-3 md:ml-6">
+              <span className="text-[10px] md:text-xs font-bold uppercase tracking-widest opacity-70">Coins</span>
+              <span className="text-lg md:text-xl font-bold font-mono">{coins}</span>
             </div>
           </div>
           
           <div className="flex flex-col items-end">
-            <div className="text-[10px] text-magenta-400 font-bold uppercase mb-1">Neural Sync</div>
-            <div className="w-40 h-1.5 bg-gray-900 border border-magenta-500/30 rounded-full overflow-hidden">
+            <div className="text-[9px] md:text-[10px] text-magenta-400 font-bold uppercase mb-1">Speed</div>
+            <div className="w-24 md:w-40 h-1 md:h-1.5 bg-gray-900 border border-magenta-500/30 rounded-full overflow-hidden">
               <div 
                 className="h-full bg-magenta-500 shadow-[0_0_15px_#ff00ff]" 
                 style={{ width: `${Math.min((speed / 40) * 100, 100)}%` }}

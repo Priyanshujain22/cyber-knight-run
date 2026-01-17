@@ -260,7 +260,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
       }
     }
 
-    ctx.fillStyle = COLORS.DARK;
+    // Floor
+    ctx.fillStyle = '#0a1428';
     const fL = project(-LANE_WIDTH * 2.5, cssHeight, 0);
     const fR = project(LANE_WIDTH * 2.5, cssHeight, 0);
     const fFL = project(-LANE_WIDTH * 1.5, cssHeight, HORIZON_Z);
