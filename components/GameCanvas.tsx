@@ -15,6 +15,16 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const requestRef = useRef<number>();
   const lastTimeRef = useRef<number>(0);
+  const lastDrawRef = useRef<number>(0);
+  const targetFPSRef = useRef<number>(60);
+  const isMobileRef = useRef<boolean>(false);
+  const dprRef = useRef<number>(1);
+  const pausedRef = useRef<boolean>(false);
+  const lowQualityRef = useRef<boolean>(false);
+  const backgroundLayersRef = useRef<number>(5);
+  const maxObstaclesRef = useRef<number>(12);
+  const maxOrbsRef = useRef<number>(40);
+  const frameTimesRef = useRef<number[]>([]);
   
   // Game state held in refs for 60fps performance
   const scoreRef = useRef(0);
@@ -66,6 +76,53 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
+
+  // Touch / pointer controls (tap to jump, swipe left/right to change lane, down swipe to slide)
+  useEffect(() => {
+    let startX = 0;
+    let startY = 0;
+    let startTime = 0;
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.pointerType !== 'touch') return;
+      startX = e.clientX;
+      startY = e.clientY;
+      startTime = Date.now();
+    };
+    const onPointerUp = (e: PointerEvent) => {
+      if (e.pointerType !== 'touch') return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      const dt = Date.now() - startTime;
+      const absX = Math.abs(dx);
+      const absY = Math.abs(dy);
+
+      // Quick tap
+      if (dt < 250 && absX < 10 && absY < 10) {
+        if (playerYRef.current === 0) playerVelYRef.current = JUMP_FORCE;
+        return;
+      }
+
+      // Horizontal swipe
+      if (absX > 40 && absX > absY) {
+        if (dx < 0 && targetLaneRef.current > Lane.LEFT) targetLaneRef.current--;
+        if (dx > 0 && targetLaneRef.current < Lane.RIGHT) targetLaneRef.current++;
+        return;
+      }
+
+      // Down swipe -> slide
+      if (dy > 40 && absY > absX) {
+        isSlidingRef.current = true;
+        slideTimerRef.current = 35;
+      }
+    };
+
+    window.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('pointerup', onPointerUp);
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('pointerup', onPointerUp);
+    };
+  }, []);
 
   const update = (dt: number) => {
     if (status !== GameStatus.PLAYING) return;
@@ -139,7 +196,13 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
         });
       }
 
-      spawnTimerRef.current = Math.max(12, 50 - (speedRef.current * 1.2));
+      // cap spawn counts based on quality
+      if (obstaclesRef.current.length < maxObstaclesRef.current) {
+        spawnTimerRef.current = Math.max(12, 50 - (speedRef.current * 1.2));
+      } else {
+        // delay spawn if too many obstacles
+        spawnTimerRef.current = 10;
+      }
     }
 
     // Move & Collide
@@ -170,11 +233,11 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
       }
     });
 
-    obstaclesRef.current = obstaclesRef.current.filter(obs => (obs.z + obs.length) > -100);
-    orbsRef.current = orbsRef.current.filter(orb => orb.z > -100 && !orb.isCollected);
+    obstaclesRef.current = obstaclesRef.current.filter(obs => (obs.z + obs.length) > -100).slice(0, maxObstaclesRef.current);
+    orbsRef.current = orbsRef.current.filter(orb => orb.z > -100 && !orb.isCollected).slice(0, maxOrbsRef.current);
   };
 
-  const draw = (ctx: CanvasRenderingContext2D) => {
+  const draw = (ctx: CanvasRenderingContext2D, timeMs: number) => {
     const { width, height } = ctx.canvas;
     ctx.clearRect(0, 0, width, height);
 
@@ -187,24 +250,27 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
       };
     };
 
-    // Draw Cityscape Background (Parallax)
+    // Draw Cityscape Background (Parallax) - adapt layers for quality
     ctx.fillStyle = COLORS.BUILDING;
-    for (let i = -10; i < 10; i++) {
+    const bgLayers = Math.max(1, backgroundLayersRef.current);
+    for (let i = -4; i < 5; i++) {
       if (i === 0) continue;
       const bX = (i * 600) + (i > 0 ? 300 : -300);
       const bZ = (2000 - backgroundOffsetRef.current * 0.5) % 2000;
-      for (let j = 0; j < 5; j++) {
+      for (let j = 0; j < bgLayers; j++) {
         const pZ = (bZ + j * 400) % 2000;
         const p = project(bX, height, pZ);
         const h = 400 * p.scale;
         const w = 200 * p.scale;
         ctx.fillRect(p.x - w/2, p.y - h, w, h);
-        ctx.strokeStyle = COLORS.CYAN;
-        ctx.lineWidth = 1;
-        ctx.strokeRect(p.x - w/2, p.y - h, w, h);
-        // Windows
-        ctx.fillStyle = COLORS.CYAN + '33';
-        ctx.fillRect(p.x - w/4, p.y - h*0.8, w/2, h*0.1);
+        if (!lowQualityRef.current) {
+          ctx.strokeStyle = COLORS.CYAN;
+          ctx.lineWidth = 1;
+          ctx.strokeRect(p.x - w/2, p.y - h, w, h);
+          // Windows
+          ctx.fillStyle = COLORS.CYAN + '33';
+          ctx.fillRect(p.x - w/4, p.y - h*0.8, w/2, h*0.1);
+        }
       }
     }
 
@@ -232,7 +298,8 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
       const p = project((orb.lane - 1) * LANE_WIDTH, height - 60, orb.z);
       if (p.scale > 0) {
         ctx.fillStyle = COLORS.GOLD;
-        ctx.shadowBlur = 10; ctx.shadowColor = COLORS.GOLD;
+        // reduce shadow on mobile
+        ctx.shadowBlur = isMobileRef.current ? 6 : 10; ctx.shadowColor = COLORS.GOLD;
         ctx.beginPath(); ctx.arc(p.x, p.y, 12 * p.scale, 0, Math.PI*2); ctx.fill();
         ctx.shadowBlur = 0;
       }
@@ -263,25 +330,25 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
           ctx.moveTo(startP.x + wS/2, startP.y); ctx.lineTo(endP.x + wE/2, endP.y);
           ctx.moveTo(startP.x - wS/2, startP.y - hS); ctx.lineTo(endP.x - wE/2, endP.y - hE);
           ctx.moveTo(startP.x + wS/2, startP.y - hS); ctx.lineTo(endP.x + wE/2, endP.y - hE);
-          ctx.stroke();
+          if (!lowQualityRef.current) ctx.stroke();
           // Front face
           ctx.fillRect(startP.x - wS/2, startP.y - hS, wS, hS);
-          ctx.strokeRect(startP.x - wS/2, startP.y - hS, wS, hS);
+          if (!lowQualityRef.current) ctx.strokeRect(startP.x - wS/2, startP.y - hS, wS, hS);
         } else if (obs.type === 'HURDLE') {
           ctx.fillStyle = COLORS.STONE;
           ctx.strokeStyle = COLORS.CYAN;
           ctx.fillRect(startP.x - 60 * startP.scale, startP.y - 40 * startP.scale, 120 * startP.scale, 40 * startP.scale);
-          ctx.strokeRect(startP.x - 60 * startP.scale, startP.y - 40 * startP.scale, 120 * startP.scale, 40 * startP.scale);
+          if (!lowQualityRef.current) ctx.strokeRect(startP.x - 60 * startP.scale, startP.y - 40 * startP.scale, 120 * startP.scale, 40 * startP.scale);
         } else if (obs.type === 'SCANNER') {
           ctx.strokeStyle = COLORS.LASER;
           ctx.lineWidth = 5 * startP.scale;
           ctx.beginPath();
           ctx.moveTo(startP.x - 70 * startP.scale, startP.y - 180 * startP.scale);
           ctx.lineTo(startP.x + 70 * startP.scale, startP.y - 180 * startP.scale);
-          ctx.stroke();
+          if (!lowQualityRef.current) ctx.stroke();
           ctx.fillStyle = COLORS.STONE;
           ctx.fillRect(startP.x - 70 * startP.scale, startP.y - 180 * startP.scale, 10 * startP.scale, 180 * startP.scale);
-          ctx.fillRect(startP.x + 60 * startP.scale, startP.y - 180 * startP.scale, 10 * startP.scale, 180 * startP.scale);
+          if (!lowQualityRef.current) ctx.fillRect(startP.x + 60 * startP.scale, startP.y - 180 * startP.scale, 10 * startP.scale, 180 * startP.scale);
         }
         ctx.restore();
       }
@@ -292,14 +359,14 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
     ctx.save();
     ctx.translate(pProj.x, pProj.y);
     ctx.scale(pProj.scale, pProj.scale);
-    
-    // Animation bob
-    const bob = Math.sin(Date.now() * 0.01) * 5;
-    
+
+    // Animation bob (use timeMs to avoid Date.now allocations)
+    const bob = Math.sin(timeMs * 0.001) * 5;
+
     ctx.fillStyle = COLORS.STONE;
     ctx.strokeStyle = COLORS.CYAN;
     ctx.lineWidth = 4;
-    ctx.shadowBlur = 15; ctx.shadowColor = COLORS.CYAN;
+    ctx.shadowBlur = isMobileRef.current ? 8 : 15; ctx.shadowColor = COLORS.CYAN;
 
     if (isSlidingRef.current) {
       ctx.fillRect(-50, -30, 100, 30);
@@ -325,27 +392,119 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
   };
 
   const loop = (time: number) => {
-    const dt = lastTimeRef.current ? (time - lastTimeRef.current) / 16.67 : 1;
-    lastTimeRef.current = time;
-    update(dt);
-    if (canvasRef.current) {
-      const ctx = canvasRef.current.getContext('2d');
-      if (ctx) draw(ctx);
+    const timeMs = time;
+    const dtMs = lastTimeRef.current ? (timeMs - lastTimeRef.current) : (1000 / 60);
+    const targetFPS = targetFPSRef.current;
+    const minFrameMs = 1000 / targetFPS;
+
+    // Skip frames if we are above target FPS (reduces GPU work on mobile)
+    if (dtMs < minFrameMs) {
+      requestRef.current = requestAnimationFrame(loop);
+      return;
     }
+
+    lastTimeRef.current = timeMs;
+    // adaptive quality tracking
+    const ft = frameTimesRef.current;
+    ft.push(dtMs);
+    if (ft.length > 30) ft.shift();
+    const avg = ft.reduce((a, b) => a + b, 0) / ft.length;
+    // If average frame time is high, reduce quality
+    if (avg > 28) {
+      lowQualityRef.current = true;
+      backgroundLayersRef.current = Math.max(2, Math.floor(backgroundLayersRef.current / 2));
+      targetFPSRef.current = isMobileRef.current ? 25 : 45;
+      maxObstaclesRef.current = Math.max(6, Math.floor(maxObstaclesRef.current * 0.7));
+      maxOrbsRef.current = Math.max(12, Math.floor(maxOrbsRef.current * 0.7));
+    } else if (avg < 18) {
+      lowQualityRef.current = isMobileRef.current ? true : false;
+      backgroundLayersRef.current = isMobileRef.current ? 3 : 6;
+      targetFPSRef.current = isMobileRef.current ? 30 : 60;
+      maxObstaclesRef.current = isMobileRef.current ? 8 : 16;
+      maxOrbsRef.current = isMobileRef.current ? 20 : 60;
+    }
+
+    const dt = dtMs / 16.67;
+    update(dt);
+
+    if (!pausedRef.current && canvasRef.current) {
+      const ctx = canvasRef.current.getContext('2d');
+      if (ctx) draw(ctx, timeMs);
+    }
+
     requestRef.current = requestAnimationFrame(loop);
   };
 
   useEffect(() => {
+    // detect mobile
+    try { isMobileRef.current = /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent) || window.matchMedia('(pointer:coarse)').matches; } catch (e) { isMobileRef.current = false; }
+    dprRef.current = Math.min(window.devicePixelRatio || 1, isMobileRef.current ? 1.5 : 2);
+    targetFPSRef.current = isMobileRef.current ? 30 : 60;
+
+    // initial quality settings
+    if (isMobileRef.current) {
+      lowQualityRef.current = true;
+      backgroundLayersRef.current = 3;
+      maxObstaclesRef.current = 8;
+      maxOrbsRef.current = 20;
+    } else {
+      lowQualityRef.current = false;
+      backgroundLayersRef.current = 6;
+      maxObstaclesRef.current = 16;
+      maxOrbsRef.current = 60;
+    }
+
+    const resizeCanvas = () => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const cssW = Math.max(320, window.innerWidth);
+      const cssH = Math.max(480, window.innerHeight);
+      canvas.style.width = cssW + 'px';
+      canvas.style.height = cssH + 'px';
+      const backingStoreRatio = dprRef.current;
+      const w = Math.floor(cssW * backingStoreRatio);
+      const h = Math.floor(cssH * backingStoreRatio);
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (ctx) ctx.setTransform(backingStoreRatio, 0, 0, backingStoreRatio, 0, 0);
+      }
+    };
+
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    window.addEventListener('orientationchange', resizeCanvas);
+
     if (status === GameStatus.PLAYING) {
       resetGame();
+      pausedRef.current = false;
       requestRef.current = requestAnimationFrame(loop);
     } else if (requestRef.current) {
       cancelAnimationFrame(requestRef.current);
     }
-    return () => { if (requestRef.current) cancelAnimationFrame(requestRef.current); };
+
+    const onVisibility = () => {
+      if (document.hidden) {
+        pausedRef.current = true;
+        if (requestRef.current) cancelAnimationFrame(requestRef.current);
+      } else {
+        pausedRef.current = false;
+        lastTimeRef.current = 0;
+        requestRef.current = requestAnimationFrame(loop);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('resize', resizeCanvas);
+      window.removeEventListener('orientationchange', resizeCanvas);
+      if (requestRef.current) cancelAnimationFrame(requestRef.current);
+    };
   }, [status]);
 
-  return <canvas ref={canvasRef} width={window.innerWidth} height={window.innerHeight} className="w-full h-full" />;
+  return <canvas ref={canvasRef} className="w-full h-full touch-none" />;
 };
 
 export default GameCanvas;
