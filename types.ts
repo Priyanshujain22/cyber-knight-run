@@ -15,7 +15,7 @@ export interface Obstacle {
   id: number;
   lane: Lane;
   z: number;
-  type: 'TRAIN' | 'HURDLE' | 'SCANNER';
+  type: 'TRAIN' | 'HURDLE' | 'SCANNER' | 'RAMP';
   length: number; // For long trains
 }
 
