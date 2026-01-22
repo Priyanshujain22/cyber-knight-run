@@ -245,6 +245,34 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
       };
     };
 
+    // Draw retro-wave sun
+    const sunY = cssHeight / 2 - 100;
+    const sunSize = 400;
+    const sunGradient = ctx.createLinearGradient(cssWidth / 2, sunY - sunSize/2, cssWidth / 2, sunY + sunSize/2);
+    sunGradient.addColorStop(0, '#ffff00');
+    sunGradient.addColorStop(0.5, '#ff00ff');
+    sunGradient.addColorStop(1, '#9900ff');
+    
+    ctx.save();
+    ctx.fillStyle = sunGradient;
+    ctx.beginPath();
+    ctx.arc(cssWidth / 2, sunY, 150, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Sun scanlines
+    ctx.fillStyle = '#050505';
+    for(let i = 0; i < 10; i++) {
+      ctx.fillRect(cssWidth/2 - 160, sunY + 20 + (i * 12), 320, 4 + (i * 0.5));
+    }
+    
+    // Sun Glow
+    ctx.shadowColor = '#ff00ff';
+    ctx.shadowBlur = 40;
+    ctx.beginPath();
+    ctx.arc(cssWidth / 2, sunY, 150, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
     // Draw background buildings
     ctx.fillStyle = COLORS.BUILDING;
     const bgLayers = Math.max(1, backgroundLayersRef.current);
@@ -257,42 +285,82 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
         const p = project(bX, cssHeight, pZ);
         const h = 400 * p.scale;
         const w = 200 * p.scale;
+        
+        ctx.fillStyle = '#0a0a12';
         ctx.fillRect(p.x - w/2, p.y - h, w, h);
+        
         if (!lowQualityRef.current) {
-          ctx.strokeStyle = COLORS.CYAN;
+          ctx.strokeStyle = '#2a2a4a';
           ctx.lineWidth = 1;
           ctx.strokeRect(p.x - w/2, p.y - h, w, h);
-          ctx.fillStyle = COLORS.CYAN + '33';
-          ctx.fillRect(p.x - w/4, p.y - h*0.8, w/2, h*0.1);
-          ctx.fillStyle = COLORS.BUILDING;
+
+          // Building Windows
+          ctx.fillStyle = Math.sin(timeMs * 0.002 + i + j) > 0 ? '#00f3ff' : '#ff00ff';
+          const winSize = 10 * p.scale;
+          const gap = 20 * p.scale;
+          for(let wx = 0; wx < 3; wx++) {
+             for(let wy = 0; wy < 10; wy++) {
+                if (Math.random() > 0.7) { // Random flicker
+                   ctx.globalAlpha = 0.6;
+                   ctx.fillRect(
+                      (p.x - w/2) + 10*p.scale + (wx * (winSize + gap)),
+                      (p.y - h) + 10*p.scale + (wy * (winSize + gap)),
+                      winSize,
+                      winSize
+                   );
+                   ctx.globalAlpha = 1.0;
+                }
+             }
+          }
         }
       }
     }
 
-    // Draw floor/ground
-    ctx.fillStyle = '#0a1428';
-    const fL = project(-LANE_WIDTH * 2.5, cssHeight, 0);
-    const fR = project(LANE_WIDTH * 2.5, cssHeight, 0);
-    const fFL = project(-LANE_WIDTH * 1.5, cssHeight, HORIZON_Z);
-    const fFR = project(LANE_WIDTH * 1.5, cssHeight, HORIZON_Z);
+    // Draw grid floor
+    const fL = project(-LANE_WIDTH * 4, cssHeight, 0);
+    const fR = project(LANE_WIDTH * 4, cssHeight, 0);
+    const fFL = project(-LANE_WIDTH * 2, cssHeight, HORIZON_Z);
+    const fFR = project(LANE_WIDTH * 2, cssHeight, HORIZON_Z);
+    
+    // Floor Gradient
+    const floorGrad = ctx.createLinearGradient(0, cssHeight/2, 0, cssHeight);
+    floorGrad.addColorStop(0, '#0a0014');
+    floorGrad.addColorStop(1, '#1a0028');
+    ctx.fillStyle = floorGrad;
     ctx.beginPath();
     ctx.moveTo(fL.x, fL.y); ctx.lineTo(fR.x, fR.y); ctx.lineTo(fFR.x, fFR.y); ctx.lineTo(fFL.x, fFL.y);
     ctx.closePath();
     ctx.fill();
 
-    // Draw lane markers
-    ctx.strokeStyle = COLORS.MAGENTA;
-    ctx.lineWidth = 2;
-    ctx.shadowColor = 'transparent';
-    ctx.shadowBlur = 0;
-    for (let i = -1.5; i <= 1.5; i += 1) {
-      const s = project(i * LANE_WIDTH, cssHeight, 0);
-      const e = project(i * LANE_WIDTH, cssHeight, HORIZON_Z);
-      ctx.beginPath();
-      ctx.moveTo(s.x, s.y);
-      ctx.lineTo(e.x, e.y);
-      ctx.stroke();
+    // Moving Grid Lines (Horizontal)
+    ctx.strokeStyle = 'rgba(255, 0, 255, 0.3)';
+    ctx.lineWidth = 1;
+    const gridOffset = (backgroundOffsetRef.current % 200);
+    for (let z = 0; z < HORIZON_Z; z += 200) {
+        const rZ = (z - gridOffset + 2000) % 2000;
+        const p1 = project(-LANE_WIDTH * 10, cssHeight, rZ);
+        const p2 = project(LANE_WIDTH * 10, cssHeight, rZ);
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.stroke();
     }
+    
+    // Vertical Grid Lines
+    for (let x = -4; x <= 4; x++) {
+        const p1 = project(x * LANE_WIDTH * 1.5, cssHeight, 0);
+        const p2 = project(x * LANE_WIDTH * 1.5, cssHeight, HORIZON_Z);
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.stroke();
+    }
+
+    // Active Lane Highlight
+    const lS = project((targetLaneRef.current - 1) * LANE_WIDTH, cssHeight, 0);
+    const lE = project((targetLaneRef.current - 1) * LANE_WIDTH, cssHeight, HORIZON_Z);
+    ctx.fillStyle = 'rgba(0, 243, 255, 0.1)';
+    ctx.fillRect(lS.x - 20, lS.y, 40, lE.y - lS.y);
 
     // Draw orbs/coins
     orbsRef.current.forEach(orb => {
@@ -300,12 +368,16 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
       if (p.scale > 0) {
         ctx.save();
         ctx.fillStyle = COLORS.GOLD;
-        if (!isMobileRef.current) {
-          ctx.shadowColor = COLORS.GOLD;
-          ctx.shadowBlur = 10;
-        }
+        ctx.shadowColor = COLORS.GOLD;
+        ctx.shadowBlur = 15;
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 12 * p.scale, 0, Math.PI * 2);
+        const osc = Math.sin(timeMs * 0.005 + orb.id) * 5 * p.scale;
+        ctx.arc(p.x, p.y + osc, 12 * p.scale, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.shadowBlur = 0;
+        ctx.beginPath();
+        ctx.arc(p.x - 3*p.scale, p.y - 3*p.scale + osc, 4 * p.scale, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
       }
@@ -321,46 +393,74 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
         if (obs.type === 'TRAIN') {
           ctx.fillStyle = COLORS.TRAIN;
           ctx.strokeStyle = COLORS.MAGENTA;
-          ctx.lineWidth = 3;
+          ctx.lineWidth = 2;
+          ctx.shadowColor = COLORS.MAGENTA;
+          ctx.shadowBlur = 10;
+          
           const wS = 100 * startP.scale;
           const hS = 160 * startP.scale;
           const wE = 100 * endP.scale;
           const hE = 160 * endP.scale;
 
+          // Train Body
           ctx.fillRect(endP.x - wE/2, endP.y - hE, wE, hE);
-          if (!lowQualityRef.current) {
-            ctx.beginPath();
-            ctx.moveTo(startP.x - wS/2, startP.y);
-            ctx.lineTo(endP.x - wE/2, endP.y);
-            ctx.moveTo(startP.x + wS/2, startP.y);
-            ctx.lineTo(endP.x + wE/2, endP.y);
-            ctx.moveTo(startP.x - wS/2, startP.y - hS);
-            ctx.lineTo(endP.x - wE/2, endP.y - hE);
-            ctx.moveTo(startP.x + wS/2, startP.y - hS);
-            ctx.lineTo(endP.x + wE/2, endP.y - hE);
-            ctx.stroke();
-            ctx.strokeRect(startP.x - wS/2, startP.y - hS, wS, hS);
-          }
+          ctx.strokeRect(endP.x - wE/2, endP.y - hE, wE, hE);
+          
+          ctx.beginPath();
+          ctx.moveTo(startP.x - wS/2, startP.y);
+          ctx.lineTo(endP.x - wE/2, endP.y);
+          ctx.moveTo(startP.x + wS/2, startP.y);
+          ctx.lineTo(endP.x + wE/2, endP.y);
+          ctx.moveTo(startP.x - wS/2, startP.y - hS);
+          ctx.lineTo(endP.x - wE/2, endP.y - hE);
+          ctx.moveTo(startP.x + wS/2, startP.y - hS);
+          ctx.lineTo(endP.x + wE/2, endP.y - hE);
+          ctx.stroke();
+          
+          // Front Face
+          ctx.fillStyle = '#2a2a4a';
           ctx.fillRect(startP.x - wS/2, startP.y - hS, wS, hS);
+          ctx.strokeRect(startP.x - wS/2, startP.y - hS, wS, hS);
+          
+          // Train Lights
+          ctx.fillStyle = '#00f3ff';
+          ctx.shadowColor = '#00f3ff';
+          ctx.shadowBlur = 20;
+          ctx.beginPath();
+          ctx.arc(startP.x - wS/4, startP.y - hS/1.5, 5 * startP.scale, 0, Math.PI*2);
+          ctx.arc(startP.x + wS/4, startP.y - hS/1.5, 5 * startP.scale, 0, Math.PI*2);
+          ctx.fill();
+
         } else if (obs.type === 'HURDLE') {
-          ctx.fillStyle = COLORS.STONE;
-          ctx.fillRect(startP.x - 60 * startP.scale, startP.y - 40 * startP.scale, 120 * startP.scale, 40 * startP.scale);
-          if (!lowQualityRef.current) {
-            ctx.strokeStyle = COLORS.CYAN;
-            ctx.strokeRect(startP.x - 60 * startP.scale, startP.y - 40 * startP.scale, 120 * startP.scale, 40 * startP.scale);
-          }
+          ctx.fillStyle = '#444';
+          ctx.strokeStyle = COLORS.CYAN;
+          ctx.lineWidth = 2;
+          ctx.shadowColor = COLORS.CYAN;
+          ctx.shadowBlur = 10;
+          
+          const w = 120 * startP.scale;
+          const h = 40 * startP.scale;
+          ctx.fillRect(startP.x - w/2, startP.y - h, w, h);
+          ctx.strokeRect(startP.x - w/2, startP.y - h, w, h);
+          
         } else if (obs.type === 'SCANNER') {
-          ctx.fillStyle = COLORS.STONE;
-          ctx.fillRect(startP.x - 70 * startP.scale, startP.y - 180 * startP.scale, 10 * startP.scale, 180 * startP.scale);
-          if (!lowQualityRef.current) {
-            ctx.strokeStyle = COLORS.LASER;
-            ctx.lineWidth = 5 * startP.scale;
-            ctx.beginPath();
-            ctx.moveTo(startP.x - 70 * startP.scale, startP.y - 180 * startP.scale);
-            ctx.lineTo(startP.x + 70 * startP.scale, startP.y - 180 * startP.scale);
-            ctx.stroke();
-            ctx.fillRect(startP.x + 60 * startP.scale, startP.y - 180 * startP.scale, 10 * startP.scale, 180 * startP.scale);
-          }
+           const h = 180 * startP.scale;
+           const w = 10 * startP.scale;
+           
+           // Emitter Base
+           ctx.fillStyle = '#444';
+           ctx.fillRect(startP.x - 70 * startP.scale, startP.y - h, w, h);
+           ctx.fillRect(startP.x + 60 * startP.scale, startP.y - h, w, h);
+           
+           // Laser Beam
+           ctx.strokeStyle = `rgba(255, 0, 0, ${0.5 + Math.sin(timeMs * 0.02) * 0.4})`;
+           ctx.lineWidth = 4 * startP.scale;
+           ctx.shadowColor = 'red';
+           ctx.shadowBlur = 20;
+           ctx.beginPath();
+           ctx.moveTo(startP.x - 70 * startP.scale, startP.y - h + (10 * startP.scale));
+           ctx.lineTo(startP.x + 70 * startP.scale, startP.y - h + (10 * startP.scale));
+           ctx.stroke();
         }
         ctx.restore();
       }
@@ -373,27 +473,53 @@ const GameCanvas: React.FC<GameCanvasProps> = ({ status, onGameOver, onUpdateSco
     ctx.scale(pProj.scale, pProj.scale);
 
     const bob = Math.sin(timeMs * 0.001) * 5;
-    ctx.fillStyle = COLORS.STONE;
-    ctx.strokeStyle = COLORS.CYAN;
-    ctx.lineWidth = 4;
-    ctx.shadowColor = 'transparent';
-    ctx.shadowBlur = 0;
-
+    
+    // Player Glow
+    ctx.shadowColor = COLORS.CYAN;
+    ctx.shadowBlur = 20;
+    
+    // Player Trail (simple history effect could be added here, using just opacity for speed for now)
+    
     if (isSlidingRef.current) {
+      ctx.fillStyle = '#0a0a0a';
+      ctx.strokeStyle = COLORS.CYAN;
+      ctx.lineWidth = 3;
       ctx.fillRect(-50, -30, 100, 30);
       ctx.strokeRect(-50, -30, 100, 30);
+      
+      // Visor
+      ctx.fillStyle = COLORS.MAGENTA;
+      ctx.fillRect(-40, -25, 80, 5);
+      
     } else {
-      ctx.fillRect(-20, -135 + bob, 40, 40);
+      // Body
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(-25, -135 + bob, 50, 60); // Chest
+      ctx.fillRect(-20, -75 + bob, 40, 75); // Legs
+      
+      // Armor Detail
+      ctx.strokeStyle = COLORS.CYAN;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(-25, -135 + bob, 50, 60);
+      
+      // Head
+      ctx.fillStyle = '#222';
+      ctx.fillRect(-20, -170 + bob, 40, 35);
+      ctx.strokeRect(-20, -170 + bob, 40, 35);
+      
+      // Visor Glow
+      ctx.shadowColor = COLORS.MAGENTA;
+      ctx.shadowBlur = 15;
+      ctx.fillStyle = COLORS.MAGENTA;
+      ctx.fillRect(-18, -160 + bob, 36, 10);
+      ctx.shadowBlur = 0;
+      
+      // Core Reactor
       ctx.fillStyle = COLORS.CYAN;
-      ctx.fillRect(-15, -120 + bob, 30, 5);
-      ctx.fillStyle = COLORS.STONE;
-      ctx.fillRect(-35, -100 + bob, 70, 100);
-      ctx.strokeRect(-35, -100 + bob, 70, 100);
-      ctx.fillStyle = COLORS.MAGENTA + '66';
+      ctx.shadowColor = COLORS.CYAN;
+      ctx.shadowBlur = 10;
       ctx.beginPath();
-      ctx.moveTo(-35, -90 + bob);
-      ctx.lineTo(-60 - (speedRef.current * 0.5), -40 + bob);
-      ctx.lineTo(-35, -10 + bob);
+      ctx.arc(0, -110 + bob, 8, 0, Math.PI*2);
       ctx.fill();
     }
     ctx.restore();
